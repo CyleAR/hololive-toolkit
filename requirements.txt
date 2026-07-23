@@ -5,3 +5,4 @@ UnityPy>=1.10.6
 Pillow>=10.0
 rich>=13.7
 WannaCRI>=0.3.1
+cridecoder>=0.3.4,<0.4

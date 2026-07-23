@@ -57,6 +57,11 @@ def _parser() -> argparse.ArgumentParser:
         default=str(TOOL_ROOT / "cache" / "bundles"),
         help="Shared cache for downloaded Unity bundles",
     )
+    parser.add_argument(
+        "--resource-cache",
+        default=str(TOOL_ROOT / "cache" / "resources"),
+        help="Shared cache for ACB/AWB and other converted media sources",
+    )
     parser.add_argument("--kind", choices=("all", "asset", "resource"), default="all")
     parser.add_argument("--workers", type=int, default=12)
     parser.add_argument("--match", help="Case-insensitive regular expression for names")
@@ -85,7 +90,7 @@ def _parser() -> argparse.ArgumentParser:
         "--no-extract",
         action="store_false",
         dest="extract_assets",
-        help="Only download and decrypt; do not extract Unity objects or convert videos",
+        help="Only download and decrypt; do not extract Unity objects or convert media",
     )
     parser.add_argument(
         "--no-convert-videos",
@@ -150,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         database,
         output_root,
         bundle_cache_root=args.bundle_cache,
+        resource_cache_root=args.resource_cache,
         kind=args.kind,
         workers=args.workers,
         match=args.match,

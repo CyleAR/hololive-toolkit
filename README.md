@@ -15,7 +15,8 @@ if any is found after decrypting the game data.***
    python -m pip install -r requirements.txt
    ```
 
-   Video conversion also requires `ffmpeg` on `PATH`.
+   Video conversion also requires `ffmpeg` on `PATH`. Audio conversion uses the
+   `cridecoder` Python package installed from `requirements.txt`.
 
 2. Copy `octocacheevai` into the `cache` folder.
 
@@ -52,8 +53,9 @@ if any is found after decrypting the game data.***
    ```
 
    `--cache` and `--output` are optional. By default, the toolkit reads
-   `cache/octocacheevai`, caches Unity bundles once in `cache/bundles`, and
-   writes extracted files to `cache/extract`.
+   `cache/octocacheevai`, caches Unity bundles in `cache/bundles`, caches
+   converted media sources in `cache/resources`, and writes only final
+   extracted files to `cache/extract`.
 
 ## Languages and categories
 
@@ -80,7 +82,9 @@ Omitting `--categories` is the same as `--categories all`. Specify a
 comma-separated list only when limiting the download.
 
 
-`audio` includes voice, BGM, SE, and other ACB/AWB resources. Non-Japanese
+`audio` includes voice, BGM, SE, and other ACB/AWB resources. External AWB
+files and AWBs embedded in ACB files are decoded to PCM16 WAV automatically.
+Non-Japanese
 language selections include shared base assets together with the matching
 `_lang-*` assets.
 
@@ -110,11 +114,18 @@ Download all categories for all languages:
 python main.py --language all
 ```
 
-Download and decrypt without extracting Unity objects or converting videos:
+Download and decrypt without extracting Unity objects or converting media:
 
 ```powershell
 python main.py --no-extract
 ```
+
+Download and extract voice, BGM, and sound effects to WAV:
+
+```powershell
+python main.py --categories audio
+```
+
 
 Download, decrypt, and convert CRI USM videos to MP4:
 
@@ -131,8 +142,8 @@ command. Use `--overwrite` to download them again.
 
 ## Output
 
-Extracted files are stored in category folders without per-bundle
-subdirectories. Model textures use a dedicated `textures` subdirectory:
+Only final extracted files are stored in category folders. Model textures use
+a dedicated `textures` subdirectory:
 
 ```text
 cache\extract\
@@ -143,9 +154,10 @@ cache\extract\
 │  └─ textures\*.png
 ├─ motion\*
 ├─ effect\*
-├─ voice\*
-├─ bgm\*
-├─ se\*
+├─ voice\wav\*.wav
+├─ bgm\wav\*.wav
+├─ se\wav\*.wav
+├─ audio\wav\*.wav
 ├─ video\*.mp4
 └─ chart\*
 ```
@@ -155,6 +167,10 @@ directory, so repeated downloads and extraction reuse the same files. Use
 `--bundle-cache` to choose another location. Only embedded model `Texture2D`
 and `Sprite` objects are exported under `cache/extract/model/textures`.
 
+
+Original ACB/AWB files are retained under `cache/resources` for reuse. Use
+`--resource-cache` to choose another location. Single-entry banks produce
+`wav/<bank>.wav`; multi-entry banks use `wav/<bank>/<bank>_<id>.wav`.
 ## Special Thanks
 
 - [vilebbit/HoshimiToolkit](https://github.com/vilebbit/HoshimiToolkit)

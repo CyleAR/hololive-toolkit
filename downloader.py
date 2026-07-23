@@ -12,6 +12,7 @@ from urllib.parse import quote
 import requests
 
 import octodb_pb2
+from audio_converter import extract_cri_audio
 from classification import classify_name, language_matches, parse_categories
 from crypto_utils import RESOURCE_MAGIC, deobfuscate_asset, deobfuscate_resource
 from extractor import extract_asset_bundle, parse_bundle_key
@@ -83,12 +84,33 @@ def _adopt_legacy_bundle(
         return
 
 
+def _adopt_legacy_resource(
+    destination: Path,
+    output_root: Path,
+    category: str,
+    filename: str,
+) -> None:
+    candidate = output_root / category / filename
+    if not candidate.exists():
+        return
+    if os.path.normcase(os.path.abspath(candidate)) == os.path.normcase(
+        os.path.abspath(destination)
+    ):
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(candidate, destination)
+    except FileExistsError:
+        pass
+
+
 def _download_one(
     item: octodb_pb2.Data,
     kind: str,
     url_format: str,
     output_root: Path,
     bundle_cache_root: Path,
+    resource_cache_root: Path,
     timeout: float,
     overwrite: bool,
     deobfuscate: bool,
@@ -102,12 +124,24 @@ def _download_one(
     category = classify_name(item.name, kind)
     suffix = ".unity3d" if kind == "asset" else ""
     filename = _safe_name(item.name, f"object_{item.id}") + suffix
+    resource_suffix = Path(filename).suffix.lower()
+    cached_media = kind == "resource" and extract_assets and decrypt_resources and (
+        (
+            category in {"voice", "bgm", "se", "audio"}
+            and resource_suffix in {".acb", ".awb"}
+        )
+        or (category == "video" and resource_suffix == ".usm")
+    )
     if kind == "asset":
         destination = bundle_cache_root / category / filename
         if not destination.exists() and not overwrite:
             _adopt_legacy_bundle(
                 destination, output_root, bundle_cache_root, category, filename
             )
+    elif cached_media:
+        destination = resource_cache_root / category / filename
+        if not destination.exists() and not overwrite:
+            _adopt_legacy_resource(destination, output_root, category, filename)
     elif decrypt_resources:
         destination = output_root / category / filename
     else:
@@ -121,7 +155,7 @@ def _download_one(
         and destination.suffix.lower() == ".usm"
         and not overwrite
     ):
-        mp4 = destination.with_suffix(".mp4")
+        mp4 = output_root / category / destination.with_suffix(".mp4").name
         if mp4.exists() and validate_mp4(mp4) is None:
             warning = None
             if remove_usm and destination.exists():
@@ -156,11 +190,26 @@ def _download_one(
         ):
             result = convert_usm_to_mp4(
                 destination,
+                output=output_root / category / destination.with_suffix(".mp4").name,
                 movie_key=movie_key,
                 overwrite=overwrite,
                 delete_source=remove_usm,
             )
             extracted = 1 if result.output else 0
+            warning = result.warning
+        elif (
+            kind == "resource"
+            and category in {"voice", "bgm", "se", "audio"}
+            and extract_assets
+            and decrypt_resources
+            and destination.suffix.lower() in {".acb", ".awb"}
+        ):
+            result = extract_cri_audio(
+                destination,
+                output_root=output_root / category,
+                overwrite=overwrite,
+            )
+            extracted = len(result.outputs)
             warning = result.warning
         return DownloadResult(
             kind, item.name, category, "skipped", destination, extracted=extracted, warning=warning
@@ -227,11 +276,26 @@ def _download_one(
         ):
             result = convert_usm_to_mp4(
                 destination,
+                output=output_root / category / destination.with_suffix(".mp4").name,
                 movie_key=movie_key,
                 overwrite=overwrite,
                 delete_source=remove_usm,
             )
             extracted = 1 if result.output else 0
+            warning = result.warning
+        elif (
+            kind == "resource"
+            and category in {"voice", "bgm", "se", "audio"}
+            and extract_assets
+            and decrypt_resources
+            and destination.suffix.lower() in {".acb", ".awb"}
+        ):
+            result = extract_cri_audio(
+                destination,
+                output_root=output_root / category,
+                overwrite=overwrite,
+            )
+            extracted = len(result.outputs)
             warning = result.warning
         return DownloadResult(
             kind,
@@ -319,6 +383,7 @@ def download_database(
     database: octodb_pb2.Database,
     output_root: str | Path,
     bundle_cache_root: str | Path | None = None,
+    resource_cache_root: str | Path | None = None,
     kind: str = "all",
     workers: int = 12,
     match: str | None = None,
@@ -345,6 +410,11 @@ def download_database(
     bundle_cache_root = (
         Path(bundle_cache_root) if bundle_cache_root is not None else output_root / "bundles"
     )
+    resource_cache_root = (
+        Path(resource_cache_root)
+        if resource_cache_root is not None
+        else bundle_cache_root.parent / "resources"
+    )
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         futures = [
             executor.submit(
@@ -354,6 +424,7 @@ def download_database(
                 database.urlFormat,
                 output_root,
                 bundle_cache_root,
+                resource_cache_root,
                 timeout,
                 overwrite,
                 deobfuscate,

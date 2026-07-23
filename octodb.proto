@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+message Data {
+  int32 id = 1;
+  string name = 2;
+  int32 size = 3;
+  uint32 crc = 4;
+  string md5 = 5;
+  repeated int32 dependencies = 6;
+  string objectName = 7;
+  repeated string addresses = 8;
+}
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message Database {
+  int32 revisionId = 1;
+  repeated Data assetBundleList = 2;
+  repeated Data resourceList = 3;
+  string urlFormat = 4;
+  repeated int32 rollbackRevisionIds = 5;
+  repeated Timestamp rollbackTimes = 6;
+  int64 serverTime = 7;
+}

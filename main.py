@@ -5,8 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from downloader import count_database_jobs, download_database
 from classification import LANGUAGES
+from downloader import count_database_jobs, download_database
 from manifest import database_summary, load_database, write_manifest_json
 from rich.console import Console
 from rich.text import Text
@@ -39,90 +39,97 @@ def _print_result(current: int, total: int, result) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Decrypt Hololive Dreams' Octo cache and download server assets."
+        description="Download, decrypt, and extract Hololive Dreams server assets."
     )
     parser.add_argument(
         "--cache",
         default=str(TOOL_ROOT / "cache" / "octocacheevai"),
         help="Path to octocacheevai",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    inspect_parser = subparsers.add_parser("inspect", help="Show database information")
-    inspect_parser.add_argument("--json", dest="json_path", help="Write full manifest JSON")
-
-    def add_transfer_arguments(command_parser, *, extraction_mode: bool) -> None:
-        default_dir = "extract" if extraction_mode else "download"
-        command_parser.add_argument(
-            "--output", default=str(TOOL_ROOT / "cache" / default_dir)
-        )
-        command_parser.add_argument(
-            "--kind", choices=("all", "asset", "resource"), default="all"
-        )
-        command_parser.add_argument("--workers", type=int, default=12)
-        command_parser.add_argument(
-            "--match", help="Case-insensitive regular expression for names"
-        )
-        command_parser.add_argument("--limit", type=int, help="Maximum per selected kind")
-        command_parser.add_argument("--timeout", type=float, default=60.0)
-        command_parser.add_argument("--overwrite", action="store_true")
-        command_parser.add_argument(
-            "--language",
-            choices=LANGUAGES,
-            default="jpn" if extraction_mode else "all",
-        )
-        command_parser.add_argument(
-            "--categories",
-            default="img,adv" if extraction_mode else None,
-            help="Comma-separated: img,adv,live2d,model,motion,effect,audio,video,chart,all",
-        )
-        command_parser.add_argument(
-            "--raw-assets", action="store_true", help="Keep asset bundle headers obfuscated"
-        )
-        command_parser.add_argument(
-            "--raw-resources", action="store_true", help="Keep the QUAVMAGIC wrapper"
-        )
-        command_parser.add_argument(
-            "--bundle-key", help="16-byte Unity bundle key (text, hex, or base64)"
-        )
-        if not extraction_mode:
-            command_parser.add_argument(
-                "--extract-assets",
-                action="store_true",
-                help="Also export Texture2D, Sprite, TextAsset, and AudioClip",
-            )
-        else:
-            command_parser.set_defaults(extract_assets=True)
-        command_parser.add_argument(
-            "--json", dest="json_path", help="Also write full manifest JSON"
-        )
-
-    download_parser = subparsers.add_parser(
-        "download", help="Download, decrypt, and classify server objects"
+    parser.add_argument(
+        "--inspect", action="store_true", help="Only show database information"
     )
-    add_transfer_arguments(download_parser, extraction_mode=False)
-
-    extract_parser = subparsers.add_parser(
-        "extract", help="Download classified objects and export supported Unity payloads"
+    parser.add_argument(
+        "--output", help="Output directory (defaults to cache/extract or cache/download)"
     )
-    add_transfer_arguments(extract_parser, extraction_mode=True)
+    parser.add_argument(
+        "--bundle-cache",
+        default=str(TOOL_ROOT / "cache" / "bundles"),
+        help="Shared cache for downloaded Unity bundles",
+    )
+    parser.add_argument("--kind", choices=("all", "asset", "resource"), default="all")
+    parser.add_argument("--workers", type=int, default=12)
+    parser.add_argument("--match", help="Case-insensitive regular expression for names")
+    parser.add_argument("--limit", type=int, help="Maximum per selected kind")
+    parser.add_argument("--timeout", type=float, default=60.0)
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--language", choices=LANGUAGES, default="jpn")
+    parser.add_argument(
+        "--categories",
+        default="all",
+        help="Comma-separated (default: all): img,adv,live2d,model,motion,effect,audio,video,chart,all",
+    )
+    parser.add_argument(
+        "--raw-assets", action="store_true", help="Keep asset bundle headers obfuscated"
+    )
+    parser.add_argument(
+        "--raw-resources", action="store_true", help="Keep the QUAVMAGIC wrapper"
+    )
+    parser.add_argument(
+        "--bundle-key", help="16-byte Unity bundle key (text, hex, or base64)"
+    )
+    parser.add_argument(
+        "--movie-key", help="64-bit CRI Movie key (decimal or 0x-prefixed hex)"
+    )
+    parser.add_argument(
+        "--no-extract",
+        action="store_false",
+        dest="extract_assets",
+        help="Only download and decrypt; do not extract Unity objects or convert videos",
+    )
+    parser.add_argument(
+        "--no-convert-videos",
+        action="store_false",
+        dest="convert_videos",
+        help="Extract Unity objects but keep USM videos without creating MP4 files",
+    )
+    parser.set_defaults(extract_assets=True, convert_videos=True)
+    parser.add_argument("--json", dest="json_path", help="Also write full manifest JSON")
     return parser
 
 
-def main() -> int:
-    args = _parser().parse_args()
+def _normalize_legacy_command(argv: list[str]) -> list[str]:
+    """Keep the former download/inspect command forms working."""
+    if not argv:
+        return argv
+    if argv[0] == "download":
+        return argv[1:]
+    if argv[0] == "inspect":
+        return ["--inspect", *argv[1:]]
+    return argv
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = _parser().parse_args(_normalize_legacy_command(raw_argv))
     database = load_database(args.cache)
     summary = database_summary(database)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
-    if getattr(args, "json_path", None):
+    if args.json_path:
         write_manifest_json(database, args.json_path)
         print(f"Manifest written: {Path(args.json_path).resolve()}")
 
-    if args.command == "inspect":
+    if args.inspect:
         return 0
 
-    counts = {"downloaded": 0, "skipped": 0, "failed": 0, "extractedObjects": 0, "warnings": 0}
+    counts = {
+        "downloaded": 0,
+        "skipped": 0,
+        "failed": 0,
+        "extractedObjects": 0,
+        "warnings": 0,
+    }
     total = count_database_jobs(
         database,
         kind=args.kind,
@@ -134,9 +141,15 @@ def main() -> int:
     CONSOLE.print(
         f"[bold blue]>>> [Info][/bold blue] Items to process: [bold cyan]{total}[/bold cyan]"
     )
+    extraction_enabled = args.extract_assets
+    convert_videos = extraction_enabled and args.convert_videos
+    output_root = args.output or str(
+        TOOL_ROOT / "cache" / ("extract" if extraction_enabled else "download")
+    )
     results = download_database(
         database,
-        args.output,
+        output_root,
+        bundle_cache_root=args.bundle_cache,
         kind=args.kind,
         workers=args.workers,
         match=args.match,
@@ -145,10 +158,13 @@ def main() -> int:
         overwrite=args.overwrite,
         deobfuscate=not args.raw_assets,
         decrypt_resources=not args.raw_resources,
-        extract_assets=getattr(args, "extract_assets", False),
+        extract_assets=extraction_enabled,
         bundle_key=args.bundle_key,
         language=args.language,
         categories=args.categories,
+        convert_videos=convert_videos,
+        movie_key=args.movie_key,
+        remove_usm=convert_videos,
     )
     for current, result in enumerate(results, start=1):
         counts[result.status] += 1

@@ -12,8 +12,11 @@ if any is found after decrypting the game data.***
 1. Install the requirements.
 
    ```powershell
+   chcp 65001 > $null
    python -m pip install -r requirements.txt
    ```
+
+   Video conversion also requires `ffmpeg` on `PATH`.
 
 2. Copy `octocacheevai` into the `cache` folder.
 
@@ -35,21 +38,25 @@ if any is found after decrypting the game data.***
 
 3. Run `main.py`.
 
-   By default, this downloads and extracts Japanese images and ADV data:
+   By default, this downloads and extracts every category for Japanese and
+   shared data:
 
    ```powershell
-   python main.py extract --categories img,adv
+   chcp 65001 > $null
+   python main.py
    ```
 
    Use `--language` to select another language. For example, use `kor` for
    Korean:
 
    ```powershell
-   python main.py extract --language kor --categories img,adv
+   chcp 65001 > $null
+   python main.py --language kor
    ```
 
    `--cache` and `--output` are optional. By default, the toolkit reads
-   `cache/octocacheevai` and writes extracted files to `cache/extract`.
+   `cache/octocacheevai`, caches Unity bundles once in `cache/bundles`, and
+   writes extracted files to `cache/extract`.
 
 ## Languages and categories
 
@@ -59,7 +66,7 @@ Supported languages:
 jpn, eng, kor, chs, cht, ind, all
 ```
 
-- `jpn`: Japanese (default for `extract`)
+- `jpn`: Japanese (default)
 - `eng`: English
 - `kor`: Korean
 - `chs`: Simplified Chinese
@@ -72,6 +79,9 @@ Supported categories:
 ```text
 img, adv, live2d, model, motion, effect, audio, video, chart, all
 ```
+Omitting `--categories` is the same as `--categories all`. Specify a
+comma-separated list only when limiting the download.
+
 
 `audio` includes voice, BGM, SE, and other ACB/AWB resources. Non-Japanese
 language selections include shared base assets together with the matching
@@ -82,34 +92,56 @@ language selections include shared base assets together with the matching
 Inspect the local OCTO database:
 
 ```powershell
-python main.py inspect
+chcp 65001 > $null
+python main.py --inspect
 ```
 
 Write the decoded manifest as JSON:
 
 ```powershell
-python main.py inspect --json "cache\OctoManifest.json"
+chcp 65001 > $null
+python main.py --inspect --json "cache\OctoManifest.json"
 ```
 
 Extract a small test selection:
 
 ```powershell
-python main.py extract --categories img,adv --limit 10 --workers 4
+chcp 65001 > $null
+python main.py --categories img,adv --limit 10 --workers 4
 ```
 
-Extract all known categories:
+Download all categories for all languages:
 
 ```powershell
-python main.py extract --categories all
+chcp 65001 > $null
+python main.py --language all
 ```
+
+Download and decrypt without extracting Unity objects or converting videos:
+
+```powershell
+chcp 65001 > $null
+python main.py --no-extract
+```
+
+Download, decrypt, and convert CRI USM videos to MP4:
+
+```powershell
+chcp 65001 > $null
+python main.py --categories video
+```
+
+The source `.usm` is removed only after the generated MP4 passes a decode
+validation. Hololive Dreams' videos do not require a CRI Movie key;
+`--movie-key` is available for compatible encrypted data.
 
 Existing downloads are skipped automatically and can be resumed with the same
 command. Use `--overwrite` to download them again.
 
 ## Output
 
-Extracted files are stored in flat category folders without per-bundle or
-per-object-type subdirectories:
+Extracted files are stored in category folders without per-bundle
+subdirectories. Model textures use a dedicated `textures` subdirectory:
 
 ```text
 cache\extract\
@@ -117,17 +149,20 @@ cache\extract\
 ├─ adv\*.json
 ├─ live2d\*
 ├─ model\*
+│  └─ textures\*.png
 ├─ motion\*
 ├─ effect\*
 ├─ voice\*
 ├─ bgm\*
 ├─ se\*
-├─ video\*
+├─ video\*.mp4
 └─ chart\*
 ```
 
-Downloaded Unity bundles are retained separately under `cache/extract/bundles`
-so extraction can be resumed without downloading them again.
+Downloaded Unity bundles are retained once under the shared `cache/bundles`
+directory, so repeated downloads and extraction reuse the same files. Use
+`--bundle-cache` to choose another location. Embedded model `Texture2D` and
+`Sprite` objects are exported under `cache/extract/model/textures`.
 
 ## Special Thanks
 

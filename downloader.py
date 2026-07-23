@@ -15,6 +15,7 @@ import octodb_pb2
 from classification import classify_name, language_matches, parse_categories
 from crypto_utils import RESOURCE_MAGIC, deobfuscate_asset, deobfuscate_resource
 from extractor import extract_asset_bundle, parse_bundle_key
+from media_converter import convert_usm_to_mp4, parse_movie_key, validate_mp4
 
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -52,35 +53,113 @@ def _object_url(url_format: str, item: octodb_pb2.Data) -> str:
     return url_format.replace("{o}", quote(item.objectName, safe=""))
 
 
+def _adopt_legacy_bundle(
+    destination: Path,
+    output_root: Path,
+    bundle_cache_root: Path,
+    category: str,
+    filename: str,
+) -> None:
+    """Move an older bundle layout into the shared cache when encountered."""
+    cache_root = bundle_cache_root.parent
+    candidates = (
+        output_root / "bundles" / category / filename,
+        output_root / "asset" / filename,
+        cache_root / "extract" / "bundles" / category / filename,
+        cache_root / "download" / "bundles" / category / filename,
+        cache_root / "download" / "asset" / filename,
+    )
+    destination_path = os.path.normcase(os.path.abspath(destination))
+    for candidate in candidates:
+        if os.path.normcase(os.path.abspath(candidate)) == destination_path:
+            continue
+        if not candidate.exists():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.replace(candidate, destination)
+        except FileExistsError:
+            pass
+        return
+
+
 def _download_one(
     item: octodb_pb2.Data,
     kind: str,
     url_format: str,
     output_root: Path,
+    bundle_cache_root: Path,
     timeout: float,
     overwrite: bool,
     deobfuscate: bool,
     decrypt_resources: bool,
     extract_assets: bool,
     bundle_key: bytes | None,
+    convert_videos: bool,
+    movie_key: int | None,
+    remove_usm: bool,
 ) -> DownloadResult:
     category = classify_name(item.name, kind)
     suffix = ".unity3d" if kind == "asset" else ""
     filename = _safe_name(item.name, f"object_{item.id}") + suffix
     if kind == "asset":
-        destination = output_root / "bundles" / category / filename
+        destination = bundle_cache_root / category / filename
+        if not destination.exists() and not overwrite:
+            _adopt_legacy_bundle(
+                destination, output_root, bundle_cache_root, category, filename
+            )
     elif decrypt_resources:
         destination = output_root / category / filename
     else:
         destination = output_root / "resources-raw" / category / filename
+
+    if (
+        kind == "resource"
+        and category == "video"
+        and convert_videos
+        and decrypt_resources
+        and destination.suffix.lower() == ".usm"
+        and not overwrite
+    ):
+        mp4 = destination.with_suffix(".mp4")
+        if mp4.exists() and validate_mp4(mp4) is None:
+            warning = None
+            if remove_usm and destination.exists():
+                try:
+                    destination.unlink()
+                except OSError as exc:
+                    warning = f"MP4 is valid, but the USM could not be removed: {exc}"
+            return DownloadResult(
+                kind, item.name, category, "skipped", mp4, warning=warning
+            )
 
     if destination.exists() and not overwrite:
         extracted = 0
         warning = None
         if kind == "asset" and extract_assets:
             target = output_root / category
-            result = extract_asset_bundle(destination, target, bundle_key)
+            result = extract_asset_bundle(
+                destination,
+                target,
+                bundle_key,
+                texture_subdirectory="textures" if category == "model" else None,
+            )
             extracted = len(result.outputs)
+            warning = result.warning
+        elif (
+            kind == "resource"
+            and category == "video"
+            and convert_videos
+            and decrypt_resources
+            and destination.suffix.lower() == ".usm"
+        ):
+            result = convert_usm_to_mp4(
+                destination,
+                movie_key=movie_key,
+                overwrite=overwrite,
+                delete_source=remove_usm,
+            )
+            extracted = 1 if result.output else 0
             warning = result.warning
         return DownloadResult(
             kind, item.name, category, "skipped", destination, extracted=extracted, warning=warning
@@ -129,8 +208,28 @@ def _download_one(
         warning = None
         if kind == "asset" and extract_assets:
             target = output_root / category
-            result = extract_asset_bundle(destination, target, bundle_key)
+            result = extract_asset_bundle(
+                destination,
+                target,
+                bundle_key,
+                texture_subdirectory="textures" if category == "model" else None,
+            )
             extracted = len(result.outputs)
+            warning = result.warning
+        elif (
+            kind == "resource"
+            and category == "video"
+            and convert_videos
+            and decrypt_resources
+            and destination.suffix.lower() == ".usm"
+        ):
+            result = convert_usm_to_mp4(
+                destination,
+                movie_key=movie_key,
+                overwrite=overwrite,
+                delete_source=remove_usm,
+            )
+            extracted = 1 if result.output else 0
             warning = result.warning
         return DownloadResult(
             kind,
@@ -217,6 +316,7 @@ def count_database_jobs(
 def download_database(
     database: octodb_pb2.Database,
     output_root: str | Path,
+    bundle_cache_root: str | Path | None = None,
     kind: str = "all",
     workers: int = 12,
     match: str | None = None,
@@ -229,13 +329,20 @@ def download_database(
     bundle_key: str | bytes | None = None,
     language: str = "all",
     categories: str | list[str] | None = None,
+    convert_videos: bool = False,
+    movie_key: str | int | None = None,
+    remove_usm: bool = False,
 ):
     parsed_bundle_key = (
         bundle_key if isinstance(bundle_key, bytes) else parse_bundle_key(bundle_key)
     )
+    parsed_movie_key = parse_movie_key(movie_key)
     jobs = _build_jobs(database, kind, match, limit, language, categories)
 
     output_root = Path(output_root)
+    bundle_cache_root = (
+        Path(bundle_cache_root) if bundle_cache_root is not None else output_root / "bundles"
+    )
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         futures = [
             executor.submit(
@@ -244,12 +351,16 @@ def download_database(
                 item_kind,
                 database.urlFormat,
                 output_root,
+                bundle_cache_root,
                 timeout,
                 overwrite,
                 deobfuscate,
                 decrypt_resources,
                 extract_assets,
                 parsed_bundle_key,
+                convert_videos,
+                parsed_movie_key,
+                remove_usm,
             )
             for item, item_kind in jobs
         ]

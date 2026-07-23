@@ -145,6 +145,7 @@ def extract_asset_bundle(
     destination: str | Path,
     bundle_key: bytes | None = None,
     unity_version: str = "6000.3.15f1",
+    texture_subdirectory: str | None = None,
 ) -> ExtractionResult:
     """Export common Unity payloads. Encrypted bundles require a 16-byte key."""
     try:
@@ -202,7 +203,10 @@ def extract_asset_bundle(
                 name = str(name or f"{type_name}_{obj.path_id}")
 
                 if type_name in {"Texture2D", "Sprite"}:
-                    directory = destination
+                    directory = (
+                        destination / texture_subdirectory
+                        if texture_subdirectory else destination
+                    )
                     directory.mkdir(parents=True, exist_ok=True)
                     output = _unique_path(directory, name, ".png", obj.path_id)
                     try:

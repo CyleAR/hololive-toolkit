@@ -12,7 +12,6 @@ if any is found after decrypting the game data.***
 1. Install the requirements.
 
    ```powershell
-   chcp 65001 > $null
    python -m pip install -r requirements.txt
    ```
 
@@ -42,7 +41,6 @@ if any is found after decrypting the game data.***
    shared data:
 
    ```powershell
-   chcp 65001 > $null
    python main.py
    ```
 
@@ -50,7 +48,6 @@ if any is found after decrypting the game data.***
    Korean:
 
    ```powershell
-   chcp 65001 > $null
    python main.py --language kor
    ```
 
@@ -92,42 +89,36 @@ language selections include shared base assets together with the matching
 Inspect the local OCTO database:
 
 ```powershell
-chcp 65001 > $null
 python main.py --inspect
 ```
 
 Write the decoded manifest as JSON:
 
 ```powershell
-chcp 65001 > $null
 python main.py --inspect --json "cache\OctoManifest.json"
 ```
 
 Extract a small test selection:
 
 ```powershell
-chcp 65001 > $null
 python main.py --categories img,adv --limit 10 --workers 4
 ```
 
 Download all categories for all languages:
 
 ```powershell
-chcp 65001 > $null
 python main.py --language all
 ```
 
 Download and decrypt without extracting Unity objects or converting videos:
 
 ```powershell
-chcp 65001 > $null
 python main.py --no-extract
 ```
 
 Download, decrypt, and convert CRI USM videos to MP4:
 
 ```powershell
-chcp 65001 > $null
 python main.py --categories video
 ```
 

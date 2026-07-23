@@ -152,8 +152,8 @@ cache\extract\
 
 Downloaded Unity bundles are retained once under the shared `cache/bundles`
 directory, so repeated downloads and extraction reuse the same files. Use
-`--bundle-cache` to choose another location. Embedded model `Texture2D` and
-`Sprite` objects are exported under `cache/extract/model/textures`.
+`--bundle-cache` to choose another location. Only embedded model `Texture2D`
+and `Sprite` objects are exported under `cache/extract/model/textures`.
 
 ## Special Thanks
 

@@ -143,6 +143,7 @@ def _download_one(
                 target,
                 bundle_key,
                 texture_subdirectory="textures" if category == "model" else None,
+                textures_only=category == "model",
             )
             extracted = len(result.outputs)
             warning = result.warning
@@ -213,6 +214,7 @@ def _download_one(
                 target,
                 bundle_key,
                 texture_subdirectory="textures" if category == "model" else None,
+                textures_only=category == "model",
             )
             extracted = len(result.outputs)
             warning = result.warning

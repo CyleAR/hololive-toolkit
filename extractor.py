@@ -146,6 +146,7 @@ def extract_asset_bundle(
     bundle_key: bytes | None = None,
     unity_version: str = "6000.3.15f1",
     texture_subdirectory: str | None = None,
+    textures_only: bool = False,
 ) -> ExtractionResult:
     """Export common Unity payloads. Encrypted bundles require a 16-byte key."""
     try:
@@ -187,15 +188,19 @@ def extract_asset_bundle(
                 # Preserve the normal per-object warning/reporting path below.
                 pass
 
+        supported_types = {
+            "Texture2D",
+            "Sprite",
+            "TextAsset",
+            "AudioClip",
+            "MonoBehaviour",
+        }
+        if textures_only:
+            supported_types = {"Texture2D", "Sprite"}
+
         for obj in objects:
             type_name = obj.type.name
-            if type_name not in {
-                "Texture2D",
-                "Sprite",
-                "TextAsset",
-                "AudioClip",
-                "MonoBehaviour",
-            }:
+            if type_name not in supported_types:
                 continue
             try:
                 data = repaired_textures.get(obj.path_id) or obj.read()
@@ -267,6 +272,8 @@ def extract_asset_bundle(
                 warnings.append(f"{type_name}/{obj.path_id}: {object_error}")
 
         if not outputs:
+            if textures_only and not warnings:
+                return ExtractionResult()
             warning = "; ".join(warnings) or "Bundle opened but no supported objects were found"
             return ExtractionResult(warning=warning)
         return ExtractionResult(tuple(outputs), "; ".join(warnings) or None)
